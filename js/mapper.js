@@ -4,14 +4,14 @@
   // sens: never sent to Claude in AI mode; digits: one-char-per-box candidate
   const FIELDS = [
     { g: "基本資料", items: [
-      { k: "name", l: "姓名" }, { k: "name_en", l: "英文姓名" },
-      { k: "id_no", l: "身分證字號", sens: 1, mono: 1, digits: 1 }, { k: "birth", l: "出生日期", sens: 1, ph: "例：民國70年1月1日" },
+      { k: "name", l: "姓名" }, { k: "salutation", l: "稱謂", type: "select", opts: ["先生", "女士"], def: "先生" }, { k: "name_en", l: "英文姓名" },
+      { k: "id_no", l: "身分證字號", sens: 1, mono: 1, digits: 1 }, { k: "birth", l: "出生日期", sens: 1, type: "date" },
       { k: "nationality", l: "國籍", def: "中華民國" }, { k: "identity", l: "身分別", def: "校外專家學者" }] },
-    { g: "服務單位", items: [{ k: "org", l: "服務單位" }, { k: "title", l: "職稱" }] },
+    { g: "服務單位", items: [{ k: "org", l: "服務單位", ph: "例：國立清華大學科技藝術研究所" }, { k: "title", l: "職稱", ph: "例：助理教授" }] },
     { g: "聯絡方式", items: [
-      { k: "mobile", l: "手機", sens: 1, mono: 1 }, { k: "phone", l: "市話", sens: 1, mono: 1, ph: "例：03-5715131" }, { k: "email", l: "Email" }] },
+      { k: "mobile", l: "手機", sens: 1, mono: 1 }, { k: "phone", l: "市話", sens: 1, mono: 1, ph: "例：03-5715131" }, { k: "email", l: "Email", ph: "例：name@gapp.nthu.edu.tw" }] },
     { g: "地址", items: [
-      { k: "zip", l: "戶籍郵遞區號", sens: 1, mono: 1, digits: 1 }, { k: "address", l: "戶籍地址", sens: 1 },
+      { k: "zip", l: "戶籍郵遞區號", sens: 1, mono: 1, digits: 1, ph: "例：300" }, { k: "address", l: "戶籍地址", sens: 1, ph: "請寫到里、鄰，例：新竹市東區○○里○鄰光復路二段101號" },
       { k: "mail_zip", l: "通訊郵遞區號", sens: 1, mono: 1, digits: 1, ph: "空白則同戶籍" }, { k: "mail_address", l: "通訊地址", sens: 1, ph: "空白則同戶籍" }] },
     { g: "匯款帳戶", items: [
       { k: "bank_name", l: "銀行名稱", sens: 1, ph: "例：中華郵政" }, { k: "bank_code", l: "銀行代碼", sens: 1, mono: 1, digits: 1, ph: "3 碼，例：700" },
@@ -21,84 +21,123 @@
   const ALL = FIELDS.flatMap(g => g.items);
   const LABEL = Object.fromEntries(ALL.map(f => [f.k, f.l]));
   Object.assign(LABEL, { phone_any: "電話", event_title: "講題／活動", event_org: "邀請單位", event_hours: "時數", event_place: "地點", event_time: "時間",
-    amount: "金額", amount_fmt: "金額", amount_cn: "國字金額", event_date: "活動日期", today_full: "填表日期", zip_address: "戶籍地址", mail_zip_address: "通訊地址" });
+    amount: "金額", amount_fmt: "金額", amount_cn: "國字金額", event_date: "活動日期", today_full: "填表日期", zip_address: "戶籍地址", mail_zip_address: "通訊地址",
+    org_title: "現職", birth_roc: "出生日期", birth_ad: "出生日期（西元）" });
 
-  // ---------- label dictionary (first match wins; tested on whitespace-stripped label text) ----------
+  // ---------- label dictionary (first match wins; tested on the label with spaces, hints and English removed) ----------
   const RULES = [
     ["name_en", /英文姓名|英文名/],
-    ["id_no", /身[分份]證(統一)?(字號|號碼|編號)?|國民身[分份]|統一證號|身[分份]字號/],
+    ["id_no", /身[分份]證(統一)?(字號|號碼|編號)?|國民身[分份]|身[分份]字號|統一編號/],
     ["account_name", /^(存款)?戶名|帳戶名稱/],
     ["branch_code", /分行代[碼號]|分支機構代[碼號]|分局代[碼號]/],
-    ["bank_code", /銀行代[碼號]|金融機構代[碼號]|總行代[碼號]|^代[碼號]$/],
+    ["bank_code", /銀行代[碼號]|金融機構代[碼號]|總行代[碼號]/],
+    ["code_generic", /^代[碼號]$/],
     ["account", /帳號|帳戶號碼|存簿號碼/],
-    ["bank_branch", /分行(名稱|別)?$|分支機構(名稱)?$|分行$/],
+    ["bank_branch", /^分行(名稱|別)?$|分支機構(名稱)?$/],
     ["bank_name", /銀行(名稱|別)?|金融機構(名稱)?|匯入銀行|受款銀行|^郵局$/],
     ["mail_zip_address", /通訊(地址|處|住址)|聯絡(地址|住址)|郵寄地址|現居(地址|住址)|居住地址|寄送地址/],
     ["zip_address", /戶籍(地址|地|住址)?|^(地址|住址)$/],
     ["mobile", /手機|行動電話/],
     ["phone_any", /電話/],
-    ["email", /e-?mail|電子(郵件|信箱)|信箱/i],
-    ["birth", /出生(年月日|日期)?|生日/],
-    ["org", /服務(單位|機關|機構)|任職(單位|機關)|現職(單位)?|工作單位/],
+    ["email", /電子(郵件|信箱)|^信箱$/],
+    ["birth", /出生|生日/],
+    ["org_title", /專家現職|^現職$/],
+    ["org", /服務(單位|機關|機構)|任職(單位|機關)|現職單位|工作單位/],
     ["title", /職稱|職務|職級/],
-    ["nationality", /國籍/],
-    ["event_title", /講題|(講座|演講|課程|活動)(名稱|主題|題目)|事由/],
+    ["nationality", /^國籍$/],
+    ["event_title", /講題|(講座|演講|活動)(名稱|主題|題目)/],
+    ["event_date", /(講座|演講|活動|授課)日期/],
+    ["event_time", /(講座|演講|活動|授課)時間/],
+    ["event_place", /(講座|演講|活動|授課)地點|^地點$/],
     ["event_hours", /時數/],
     ["amount_cn", /(國字|大寫)(金額)?/],
-    ["amount_fmt", /^(請領|領款|應領|支領)?(金額|鐘點費|講座費|演講費|出席費|稿費)$/],
-    ["name", /^(受款人|領款人|講者|講師|具領人|申請人|主講人)?姓名$|^受款人$|^領款人$/],
+    ["amount_fmt", /^(請領|領款|應領|支領)(金額)?$|^金額$|^(鐘點費|講座費|演講費|出席費|稿費)$/],
+    ["name", /^(受款人|領款人|講者|講師|具領人|申請人|主講人|專家)?姓名$|^受款人$|^領款人$/],
   ];
-  const SKIP = /簽|章|蓋|捺|承辦|主管|會計|出納|核[定章銷對]|審[核查]|驗收|用印|傳票|實[領付]|扣繳|補充保費|所得稅|淨額|備註|說明|附件|黏貼|影本/;
+  const SKIP = /簽|章|蓋|捺|承辦|主管|會計|出納|核[定章銷對]|審[核查]|驗收|用印|傳票|實[領付]|扣繳|補充保費|二代健保|稅|淨額|備註|說明|附件|黏貼|影本|護照英文|統一證號|外籍|外僑|大陸|員工編號|學號|所得格式|代墊|召集人|計畫|課程|經手|經辦|製表|主持人|費用?別|付款方式|用途|身分別|身份別/;
   const DIGIT_KEYS = new Set(["id_no", "account", "bank_code", "branch_code", "zip", "mail_zip"]);
 
   const strip = s => String(s || "").replace(/[\s　]/g, "");
-  const dropHints = s => String(s || "").replace(/[（(][^）)]*[）)]/g, "").replace(/[※＊*].*$/, "");
+  const dropHints = s => String(s || "").replace(/[（(][^）)]*[）)]/g, "").replace(/【[^】]*】/g, "").replace(/[※＊*★].*$/, "");
+  // "領  款  人 Received By" → 領款人 ; "1. 演講日期" → 演講日期
+  const clean = s => strip(dropHints(s)).replace(/[A-Za-z0-9.\/\\\-_&'#,]+/g, "").replace(/^[、．.]+/, "").replace(/[:：]$/, "");
   function keyOf(raw) {
-    const t = strip(dropHints(raw)).replace(/[:：]$/, "");
+    const plain = strip(dropHints(raw));
+    if (/^[^A-Za-z]{0,6}e-?mail/i.test(plain) && plain.length < 24 && !SKIP.test(plain)) return "email";
+    const t = clean(raw);
     if (!t || t.length > 14 || SKIP.test(t)) return null;
-    for (const [k, re] of RULES) if (re.test(t)) return k;
+    for (const [k, re] of RULES) if (re.test(t)) {
+      if (k === "birth") return /西元/.test(t) ? "birth_ad" : "birth_roc";
+      return k;
+    }
     return null;
+  }
+  // label text before a colon may run back to the previous colon; try it whole, then shorter tails split at wide gaps
+  function labelKey(seg) {
+    const tries = [seg];
+    const gaps = [...seg.matchAll(/[\s　_＿]{2,}|[□■○●]/g)].map(m => m.index + m[0].length);
+    gaps.forEach(g => tries.push(seg.slice(g)));
+    for (const t of tries) { const k = keyOf(t); if (k) return { k, raw: t }; }
+    return null;
+  }
+  // find "標籤：____" fills in one line of text. Returns [{k, index, find, value}]
+  function labelsIn(text) {
+    const out = []; let prev = 0;
+    const re = /[：:]/g; let m;
+    while ((m = re.exec(text))) {
+      const seg = text.slice(prev, m.index); prev = m.index + 1;
+      const hit = labelKey(seg); if (!hit) continue;
+      const after = text.slice(m.index + 1);
+      const bm = after.match(/^(NT\$)?((?:[\s　_＿□]|（[\s　]*）|\([\s　]*\))*)/);
+      const blanks = bm[2] || ""; const rest = after.slice(bm[0].length);
+      const blankLen = strip(blanks.replace(/[_＿□（）()]/g, " ")).length === 0 ? blanks.length : 0;
+      if (!(rest.trim() === "" || blankLen >= 2 || /^[（(]/.test(rest))) continue;
+      // include the label itself in the text to replace, so identical blank runs elsewhere can't be confused
+      const start = m.index - hit.raw.replace(/^(?:[\s　_＿□■○●]|（[^）]*）|\([^)]*\))+/, "").length;
+      out.push({ k: hit.k, index: m.index, start, label: text.slice(start, m.index), find: text.slice(start, m.index + 1 + bm[0].length), prefix: "：" + (bm[1] ? "NT$ " : ""), rest });
+    }
+    return out;
   }
   const BLANKISH = /^[\s　_＿□\.．…\-－]*$/;
   const HINT_ONLY = s => { const t = strip(s); return !!t && BLANKISH.test(dropHints(s)) && /[（(]/.test(t); };
+  const ADDR_TEMPLATE = /縣[\s　]*\/[\s　]*市|鄉[\s　]*\/[\s　]*鎮/;
 
   // template string for a key
-  const TPL = { zip_address: "{zip_address}", mail_zip_address: "{mail_zip_address}" };
+  const TPL = { org_title: "{org} {title}" };
   const tplFor = k => TPL[k] || `{${k}}`;
 
   // ---------- docx ----------
-  // analysis: result of DocxFill.analyze; textOf(id) gives text of a cell/paragraph
+  // analysis: result of DocxFill.analyze; textOf(id) gives text of a cell/paragraph; parasOf(id) its paragraphs
   function mapDocx(analysis, textOf, parasOf, opts) {
     opts = opts || {};
     const ops = []; const used = new Set();
     const add = op => { const ts = op.targets || [op.target]; if (op.op !== "replace" && ts.some(t => used.has(t))) return; if (op.op !== "replace") ts.forEach(t => used.add(t)); ops.push(op); };
+    const occ = (paras, pi, find, idx) => { let n = 0; for (let i = 0; i < pi; i++) n += count(paras[i], find); return n + count(paras[pi].slice(0, idx + find.length), find); };
+    const count = (t, f) => { let n = 0, i = -1; while ((i = t.indexOf(f, i + 1)) !== -1) n++; return n; };
 
     function inline(id) {
-      // "標籤：____" patterns inside one paragraph (a cell may hold several)
-      const paras = parasOf(id); let found = false; const prior = {};
-      for (const text of paras) {
-        const re = /([^\s　：:（）()，,；;。]{1,10})[：:]((?:[\s　_＿]|（[\s　]*）|\([\s　]*\))*)(?=$|[^\s　_＿]{1,10}[：:]|[（(])/g;
-        let m;
-        while ((m = re.exec(text))) {
-          const k = keyOf(m[1]);
-          if (!k) continue;
-          const occ = (prior[m[0]] || 0) + countBefore(text, m[0], m.index);
-          add({ op: "replace", target: id, find: m[0], value: `${m[1]}：${tplFor(k)}`, label: LABEL[k] || k, key: k, occurrence: occ });
+      const paras = parasOf(id); let found = false;
+      paras.forEach((text, pi) => {
+        for (const h of labelsIn(text)) {
+          add({ op: "replace", target: id, find: h.find, pre: `${h.label}${h.prefix}`, value: tplFor(h.k), post: h.rest && !/^[\s　]/.test(h.rest) ? " " : "", label: LABEL[h.k] || h.k, key: h.k, occurrence: occ(paras, pi, h.find, h.start) });
           found = true;
+          if (h.k === "name" && /^[\s　]*先生/.test(h.rest)) {
+            const at = text.indexOf("先生", h.index);
+            add({ op: "replace", target: id, find: "先生", value: "{salutation}", label: "稱謂", key: "salutation", occurrence: occ(paras, pi, "先生", at) });
+          }
         }
-        let i = -1; const seenHere = {};
-        re.lastIndex = 0; let mm; while ((mm = re.exec(text))) seenHere[mm[0]] = (seenHere[mm[0]] || 0) + 1;
-        for (const k in seenHere) prior[k] = (prior[k] || 0) + seenHere[k];
-      }
+      });
       return found;
     }
-    function countBefore(text, find, idx) { let n = 0, i = -1; while ((i = text.indexOf(find, i + 1)) !== -1 && i <= idx) n++; return n || 1; }
     function dateFill(id, text) {
-      if (opts.dateDone || /出生|生日/.test(text)) return false;
-      for (const p of parasOf(id)) {
-        const full = p.match(/年[\s　]+月[\s　]+日/);
-        if (!full) continue;
-        add({ op: "replace", target: id, find: full[0], value: "{today_y} 年 {today_m} 月 {today_d} 日", label: "填表日期", key: "today_full" });
+      if (opts.dateDone) return false;
+      const paras = parasOf(id);
+      for (let pi = 0; pi < paras.length; pi++) {
+        const p = paras[pi];
+        if (/出生|生日/.test(p)) continue;
+        const full = p.match(/[_＿]*年[\s　_＿]+月[\s　_＿]+日/);
+        if (!full || !(/[\s　_＿]{2,}/.test(full[0]) || /中華民國|民國/.test(p))) continue;
+        add({ op: "replace", target: id, find: full[0], pre: " ", value: "{today_y} 年 {today_m} 月 {today_d} 日", label: "填表日期", key: "today_full", occurrence: occ(paras, pi, full[0], full.index) });
         opts.dateDone = true; return true;
       }
       return false;
@@ -108,35 +147,49 @@
       for (const b of blocks) {
         if (b.type === "p") { const t = textOf(b.id); if (t.trim()) { inline(b.id); dateFill(b.id, t); } continue; }
         const rows = b.rows;
+        // grid column where each cell starts, so the cell "below" a header can be found
+        const starts = rows.map(r => { let c = 0; return r.map(x => { const s0 = c; c += x.span || 1; return s0; }); });
+        const below = (ri, ci) => { const r = rows[ri + 1]; if (!r) return null; const j = starts[ri + 1].indexOf(starts[ri][ci]); return j >= 0 ? r[j] : null; };
+        const headerAbove = (ri, ci) => { for (let r = ri - 1; r >= 0; r--) { const j = starts[r].indexOf(starts[ri][ci]); if (j >= 0) { const k = keyOf(textOf(rows[r][j].id)); if (k) return k; } } return null; };
         rows.forEach((row, ri) => {
           row.forEach((c, ci) => {
             if (c.inner && c.inner.length) walk(c.inner);
             if (c.vmCont) return;
             const t = textOf(c.id);
-            const k = keyOf(t);
+            let k = keyOf(t);
             const next = row[ci + 1];
+            if (k === "code_generic") {
+              // 代號 under a 分行 column is the branch code, otherwise the bank code; written beside the word
+              k = headerAbove(ri, ci) === "bank_branch" ? "branch_code" : "bank_code";
+              const raw = t.replace(/[\s　]+$/, ""); const w = raw.trim();
+              add({ op: "replace", target: c.id, find: w, pre: `${w}　`, value: tplFor(k), label: LABEL[k], key: k });
+              return;
+            }
             if (k) {
-              // label cell → target to the right, or the row below
               const isDigits = DIGIT_KEYS.has(k);
               const rightCells = []; for (let j = ci + 1; j < row.length && BLANKISH.test(textOf(row[j].id)) && !row[j].vmCont; j++) rightCells.push(row[j].id);
               if (isDigits && rightCells.length >= 3) { add({ op: "spread", targets: rightCells, value: tplFor(k), label: LABEL[k], key: k, align: "left" }); return; }
               if (rightCells.length) { add({ op: "set", target: rightCells[0], value: tplFor(k), label: LABEL[k], key: k }); return; }
+              if (next && ADDR_TEMPLATE.test(textOf(next.id))) { add({ op: "set", target: next.id, value: tplFor(k), label: LABEL[k], key: k }); return; }
               if (next && HINT_ONLY(textOf(next.id))) {
                 const nt = textOf(next.id).replace(/^[\s　]+/, ""); const find = nt.slice(0, Math.min(nt.length, 4));
-                add({ op: "replace", target: next.id, find, value: `${tplFor(k)}　${find}`, label: LABEL[k], key: k }); return;
+                add({ op: "replace", target: next.id, find, value: tplFor(k), post: `　${find}`, label: LABEL[k], key: k }); return;
               }
+              // header row: value goes in the cell directly below
+              const bc = below(ri, ci);
+              if (bc && !bc.vmCont && BLANKISH.test(textOf(bc.id)) && !labelsIn(t).length) { add({ op: "set", target: bc.id, value: tplFor(k), label: LABEL[k], key: k }); return; }
               if (!next) {
-                const below = rows[ri + 1];
-                if (below && below.every(x => BLANKISH.test(textOf(x.id)))) {
-                  if (isDigits && below.length >= 3) add({ op: "spread", targets: below.map(x => x.id), value: tplFor(k), label: LABEL[k], key: k, align: "left" });
-                  else add({ op: "set", target: below[0].id, value: tplFor(k), label: LABEL[k], key: k });
+                const br = rows[ri + 1];
+                if (br && br.every(x => BLANKISH.test(textOf(x.id)))) {
+                  if (isDigits && br.length >= 3) add({ op: "spread", targets: br.map(x => x.id), value: tplFor(k), label: LABEL[k], key: k, align: "left" });
+                  else add({ op: "set", target: br[0].id, value: tplFor(k), label: LABEL[k], key: k });
                   return;
                 }
               }
             }
             // inline labels inside this cell (skip a label column whose twin sits to the right)
             if (next && strip(textOf(next.id)) === strip(t)) return;
-            if (!inline(c.id)) dateFill(c.id, t);
+            const did = inline(c.id); dateFill(c.id, t); void did;
           });
         });
       }
@@ -156,22 +209,21 @@
       const s = it.str;
       if (hasTwinRight(it)) continue;
       // inline "label：" possibly with more after
-      const re = /([^\s　：:（）()]{1,10})[：:]/g; let m; let hit = false;
-      while ((m = re.exec(s))) {
-        const k = keyOf(m[1]); if (!k) continue;
-        const rest = s.slice(m.index + m[0].length);
-        if (rest.trim() && !/^[\s　_＿]+/.test(rest) && !/^[（(]/.test(rest.trim()) && !/^[^\s　]{1,10}[：:]/.test(rest.trim())) continue;
-        const frac = (m.index + m[0].length) / Math.max(s.length, 1);
-        let x = it.x + it.w * frac + 3;
-        if (/^[\s　]*[（(][\s　]*$/.test(rest)) {
+      let hit = false;
+      for (const h of labelsIn(s)) {
+        const rest = h.rest; const endIdx = h.index + h.find.length;
+        let x = it.x + it.w * ((h.index + 1) / Math.max(s.length, 1)) + 3;
+        if (!rest.trim()) x = it.x + it.w + 3;
+        else if (/^[\s　]*[（(][\s　]*$/.test(rest)) {
           const close = items.filter(o => sameRow(it, o) && o.x > it.x && /^[\s　]*[）)]/.test(o.str)).sort((a, b) => a.x - b.x)[0];
           x = close ? close.x + close.w + 3 : it.x + it.w + 3;
-        } else if (/^[\s　_＿（）()]+$/.test(rest)) x = it.x + it.w + 3;
-        pushPlace(k, it, x);
+        } else if (h.find.length > 3) x = it.x + it.w * ((h.index + 2) / Math.max(s.length, 1)) + 2;
+        void endIdx;
+        pushPlace(h.k, it, x);
         hit = true;
       }
       if (hit) continue;
-      const k = keyOf(s);
+      let k = keyOf(s); if (k === "code_generic") k = "bank_code";
       if (k) {
         const cells = cellsRight(it);
         if (DIGIT_KEYS.has(k) && cells.boxes.length >= 3) pushPlace(k, it, cells.boxes[0] - 4, cells.boxes);
@@ -246,6 +298,6 @@
   }
   const cleanName = n => String(n || "").replace(/^.*[.\/]/, "").replace(/\[\d+\]$/, "").replace(/[_\d]+$/, "");
 
-  const api = { FIELDS, ALL, LABEL, keyOf, mapDocx, mapPdfText, mapPdfFields, DIGIT_KEYS };
+  const api = { FIELDS, ALL, LABEL, keyOf, labelsIn, mapDocx, mapPdfText, mapPdfFields, DIGIT_KEYS };
   if (typeof module !== "undefined") module.exports = api; else root.Mapper = api;
 })(this);

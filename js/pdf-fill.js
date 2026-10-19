@@ -134,7 +134,7 @@
 
   let fontCache = null;
   async function fontBytes() {
-    if (!fontCache) fontCache = fetch(BASE + "fonts/NotoSansTC-Big5.ttf").then(r => { if (!r.ok) throw new Error("font_load"); return r.arrayBuffer(); });
+    if (!fontCache) fontCache = fetch(root.RAF_FONT_URL || (BASE + "fonts/NotoSansTC-Big5.ttf")).then(r => { if (!r.ok) throw new Error("font_load"); return r.arrayBuffer(); });
     return fontCache;
   }
 

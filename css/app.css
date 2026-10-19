@@ -160,3 +160,12 @@ fieldset+fieldset{border-top:1px dashed var(--rule);padding-top:14px}
 #edCanvas{max-width:100%;touch-action:none;cursor:crosshair}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--sheet);padding:8px 16px;border-radius:4px;font-size:14px;z-index:60;max-width:calc(100% - 32px)}
 #pdfTools select{width:auto;max-width:16em}
+
+.form-chip{display:inline-flex;align-items:center;border:1px solid var(--rule-strong);border-radius:4px;background:var(--sheet)}
+.form-chip .chip-btn{border:0;background:none;font-family:var(--f-mono);font-size:13px;padding:3px 8px;color:var(--ink);max-width:22em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.form-chip.on{border-color:var(--pen);background:var(--pen-soft)}
+.form-chip.on .chip-btn{color:var(--pen);font-weight:500}
+.tpl{font-size:13px;padding:4px 10px;border-style:dashed}
+
+.foot{max-width:1180px;margin:28px auto 0;display:flex;flex-wrap:wrap;gap:8px 18px;font-size:12.5px;color:var(--muted)}
+.foot a{color:var(--pen)}

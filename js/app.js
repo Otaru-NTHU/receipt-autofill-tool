@@ -132,8 +132,10 @@ async function saveVaultFile() {
 // ======================================================================
 function renderProfile() {
   $("#profileForm").innerHTML = FIELDS.map(g => `<fieldset><h3>${g.g}</h3>${g.items.map(f =>
-    `<div class="f${f.sens ? " sens" : ""}"><label for="pf_${f.k}">${f.l}</label><input id="pf_${f.k}" data-k="${f.k}" class="${f.mono ? "mono" : ""}" value="${esc(D.profile[f.k])}" placeholder="${esc(f.ph || "")}" autocomplete="off"></div>`).join("")}</fieldset>`).join("");
-  $("#profileForm").querySelectorAll("input").forEach(inp => inp.addEventListener("input", () => { D.profile[inp.dataset.k] = inp.value.trim(); markDirty(); profileWarn(); onValuesChanged(); }));
+    `<div class="f${f.sens ? " sens" : ""}"><label for="pf_${f.k}">${f.l}</label>${f.type === "select"
+      ? `<select id="pf_${f.k}" data-k="${f.k}">${f.opts.map(o => `<option${D.profile[f.k] === o ? " selected" : ""}>${o}</option>`).join("")}</select>`
+      : `<input id="pf_${f.k}" data-k="${f.k}" type="${f.type === "date" ? "date" : "text"}" class="${f.mono ? "mono" : ""}" value="${esc(D.profile[f.k])}" placeholder="${esc(f.ph || "")}" autocomplete="off">`}</div>`).join("")}</fieldset>`).join("");
+  $("#profileForm").querySelectorAll("input,select").forEach(inp => inp.addEventListener("input", () => { D.profile[inp.dataset.k] = inp.value.trim(); markDirty(); profileWarn(); onValuesChanged(); }));
   renderCustom();
 }
 function renderCustom() {
@@ -258,6 +260,10 @@ function values() {
   v.zip_address = [p.zip, p.address].filter(Boolean).join(" ");
   v.mail_zip_address = [v.mail_zip, v.mail_address].filter(Boolean).join(" ");
   v.phone_any = p.phone || p.mobile;
+  v.salutation = p.salutation || "先生";
+  const bd = /^\d{4}-\d{2}-\d{2}$/.test(p.birth || "") ? DocxFill.roc(p.birth) : null;
+  v.birth_roc = bd ? "民國" + bd.full : (p.birth || ""); v.birth_ad = bd ? bd.ad : (p.birth || ""); v.birth = v.birth_roc;
+  v.org_title = [p.org, p.title].filter(Boolean).join(" ");
   (D ? D.custom : []).forEach((c, i) => { if (c.label) v["custom_" + (i + 1)] = c.value; });
   Object.assign(v, { event_title: e.ev_title, event_org: e.ev_org, event_time: e.ev_time, event_hours: e.ev_hours, event_place: e.ev_place, purpose: e.ev_purpose });
   const amt = e.ev_amount.replace(/[,\s元]/g, "");
@@ -281,51 +287,93 @@ function onValuesChanged() { clearTimeout(valuesT); valuesT = setTimeout(() => {
 // ======================================================================
 // form intake
 // ======================================================================
-const F = { kind: null, name: "", bytes: null, docx: null, pdf: null, plan: null, hash: "", out: null };
-function resetForm() { Object.assign(F, { kind: null, name: "", bytes: null, docx: null, pdf: null, plan: null, hash: "", out: null }); }
+const blankForm = () => ({ kind: null, name: "", meta: "", bytes: null, docx: null, pdf: null, plan: null, hash: "", out: null });
+let F = blankForm();            // the form on screen
+let FORMS = [];                 // every form dropped in this session
+function resetForm() { F = blankForm(); FORMS = []; renderFormList(); }
 const drop = $("#drop");
 drop.addEventListener("click", () => $("#formFile").click());
 drop.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("#formFile").click(); } });
 ["dragenter", "dragover"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave", "drop"].forEach(t => drop.addEventListener(t, e => { e.preventDefault(); drop.classList.remove("over"); }));
-drop.addEventListener("drop", e => { const f = e.dataTransfer.files[0]; if (f) takeFile(f); });
-$("#formFile").addEventListener("change", e => { const f = e.target.files[0]; e.target.value = ""; if (f) takeFile(f); });
+drop.addEventListener("drop", e => { const fs = [...e.dataTransfer.files]; if (fs.length) takeFiles(fs); });
+$("#formFile").addEventListener("change", e => { const fs = [...e.target.files]; e.target.value = ""; if (fs.length) takeFiles(fs); });
 
 function hash(s) { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
 function planMsg(html) { $("#planOut").innerHTML = html; }
 
-async function takeFile(f) {
-  const n = f.name.toLowerCase();
-  if (n.endsWith(".doc")) return planMsg(`<p class="msg">這是舊版 Word .doc，瀏覽器無法讀取。請用 Word 開啟後「另存新檔」成 .docx，或匯出成 PDF，再放進來。</p>`);
-  if (!n.endsWith(".docx") && !n.endsWith(".pdf")) return planMsg(`<p class="msg">目前支援 .docx 與 .pdf。</p>`);
-  resetForm(); F.name = f.name; F.bytes = await f.arrayBuffer();
-  $("#formInfo").hidden = false; $("#formInfo").innerHTML = `<span class="chip">${esc(f.name)}</span><span class="note" id="formMeta">讀取中…</span>`;
-  $("#previewWrap").hidden = true; $("#pdfTools").hidden = true; $("#btnDlForm").disabled = true;
-  try {
-    if (n.endsWith(".docx")) {
-      F.kind = "docx";
-      const zip = await JSZip.loadAsync(F.bytes); const xml = await zip.file("word/document.xml").async("string");
-      const doc = new DOMParser().parseFromString(xml, "application/xml");
-      const a = DocxFill.analyze(doc); F.docx = { zip, xml, a };
-      F.hash = "d" + hash(a.outline);
-      $("#formMeta").textContent = `Word・${Object.keys(a.map).length} 個段落／格子`;
-    } else {
-      F.kind = "pdf";
-      planMsg(`<div class="think"><span class="dot"></span>讀取 PDF…</div>`);
-      const info = await PdfFill.analyze(new Uint8Array(F.bytes)); F.pdf = info;
-      F.hash = "p" + hash(info.sig);
-      const tf = info.fields.filter(x => x.type === "text").length;
-      $("#formMeta").textContent = `PDF・${info.pages.length} 頁・${tf ? `可填寫欄位 ${tf} 個` : "一般 PDF（文字疊印）"}${info.items.length ? "" : "・沒有可辨識文字（可能是掃描檔）"}`;
-      fillAddKey();
-    }
-  } catch (e) { console.error(e); return planMsg(`<p class="msg">讀不到這個檔案的內容${F.kind === "pdf" ? "（PDF 可能有密碼保護或已損壞）" : ""}。</p>`); }
-  refreshButtons();
-  const tpl = D.templates[F.hash];
-  if (tpl) { F.plan = JSON.parse(JSON.stringify(tpl)); F.plan.fromTemplate = true; }
-  else F.plan = rulePlan();
+async function takeFiles(files) {
+  const bad = [];
+  let first = null;
+  for (const f of files) {
+    const n = f.name.toLowerCase();
+    if (n.endsWith(".doc")) { bad.push(`${f.name}：舊版 Word .doc，請用 Word「另存新檔」成 .docx 或 PDF 再放進來`); continue; }
+    if (!n.endsWith(".docx") && !n.endsWith(".pdf")) { bad.push(`${f.name}：只支援 .docx 與 .pdf`); continue; }
+    planMsg(`<div class="think"><span class="dot"></span>讀取 ${esc(f.name)}…</div>`);
+    try { const form = await loadForm(f.name, await f.arrayBuffer()); FORMS.push(form); first = first || form; }
+    catch (e) { console.error(e); bad.push(`${f.name}：讀不到內容${n.endsWith(".pdf") ? "（PDF 可能有密碼保護或已損壞）" : ""}`); }
+  }
+  renderFormList();
+  if (first) await selectForm(first);
+  if (bad.length) { const box = document.createElement("div"); box.innerHTML = bad.map(b => `<p class="msg">${esc(b)}</p>`).join(""); $("#planOut").prepend(box); }
+}
+async function loadForm(name, bytes) {
+  const form = blankForm(); form.name = name; form.bytes = bytes;
+  if (name.toLowerCase().endsWith(".docx")) {
+    form.kind = "docx";
+    const zip = await JSZip.loadAsync(bytes); const xml = await zip.file("word/document.xml").async("string");
+    const doc = new DOMParser().parseFromString(xml, "application/xml");
+    const a = DocxFill.analyze(doc); form.docx = { zip, xml, a };
+    form.hash = "d" + hash(a.outline); form.meta = `Word・${Object.keys(a.map).length} 個段落／格子`;
+  } else {
+    form.kind = "pdf";
+    const info = await PdfFill.analyze(new Uint8Array(bytes)); form.pdf = info;
+    form.hash = "p" + hash(info.sig);
+    const tf = info.fields.filter(x => x.type === "text").length;
+    form.meta = `PDF・${info.pages.length} 頁・${tf ? `可填寫欄位 ${tf} 個` : "一般 PDF（文字疊印）"}${info.items.length ? "" : "・沒有可辨識文字（可能是掃描檔）"}`;
+  }
+  const tpl = D.templates[form.hash];
+  if (tpl) { form.plan = JSON.parse(JSON.stringify(tpl)); form.plan.fromTemplate = true; }
+  else { const prev = F; F = form; form.plan = rulePlan(); F = prev; }
+  return form;
+}
+async function selectForm(form) {
+  F = form; renderFormList(); refreshButtons();
+  $("#previewWrap").hidden = true; $("#pdfTools").hidden = F.kind !== "pdf"; if (F.kind === "pdf") fillAddKey();
+  renderedFor = null;
   await rebuild(true);
 }
-function refreshButtons() { const has = !!F.kind; $("#btnRule").disabled = !has; $("#btnAI").disabled = !has || !sample; }
+function renderFormList() {
+  const box = $("#formInfo");
+  box.hidden = !FORMS.length;
+  box.innerHTML = FORMS.map((f, i) => `<span class="form-chip${f === F ? " on" : ""}"><button type="button" class="chip-btn" data-sel="${i}" aria-pressed="${f === F}">${esc(f.name)}</button><button type="button" class="x" data-rm="${i}" aria-label="移除 ${esc(f.name)}">✕</button></span>`).join("")
+    + (F.meta ? `<span class="note" id="formMeta">${esc(F.meta)}</span>` : "");
+  box.querySelectorAll("[data-sel]").forEach(b => b.onclick = () => selectForm(FORMS[+b.dataset.sel]));
+  box.querySelectorAll("[data-rm]").forEach(b => b.onclick = async () => {
+    const f = FORMS[+b.dataset.rm]; FORMS.splice(+b.dataset.rm, 1);
+    if (f === F) { if (FORMS.length) await selectForm(FORMS[0]); else { F = blankForm(); renderFormList(); refreshButtons(); planMsg(""); $("#previewWrap").hidden = true; $("#pdfTools").hidden = true; } }
+    else renderFormList();
+  });
+  $("#btnDlAll").disabled = !FORMS.length && !hasImages();
+  $("#btnDlForm").disabled = !F.out;
+}
+const hasImages = () => !!(D && ["id_front", "id_back", "passbook"].some(k => D.images[k]));
+
+// ---------- built-in NTHU templates ----------
+let TEMPLATES = null;
+async function loadTemplates() {
+  try {
+    const r = await fetch(window.RAF_TEMPLATES_URL || ((window.RAF_BASE || "") + "templates/nthu.json")); if (!r.ok) throw 0;
+    TEMPLATES = await r.json();
+    $("#tplRow").hidden = false;
+    $("#tplList").innerHTML = TEMPLATES.map((t, i) => `<button type="button" class="tpl" data-t="${i}">${esc(t.title)}</button>`).join("");
+    $("#tplList").querySelectorAll("[data-t]").forEach(b => b.onclick = async () => {
+      const t = TEMPLATES[+b.dataset.t]; const bytes = Uint8Array.from(atob(t.data), c => c.charCodeAt(0)).buffer;
+      try { const form = await loadForm(t.file, bytes); FORMS.push(form); renderFormList(); await selectForm(form); } catch (e) { console.error(e); toast("範本載入失敗"); }
+    });
+  } catch { /* templates are optional */ }
+}
+function refreshButtons() { const has = !!F.kind; $("#btnRule").disabled = !has; $("#btnAI").disabled = !has || !sample; $("#btnDlForm").disabled = !F.out; }
 
 function rulePlan() {
   if (F.kind === "docx") {
@@ -347,7 +395,7 @@ function catalogLines() {
   const v = values(); const lines = [];
   const add = (k, l, sens, len) => { const has = !!v[k]; let d = `{${k}}: ${l} — ${has ? "有" : "無"}`; if (has && len) d += `（${String(v[k]).replace(/[\s-]/g, "").length} 字）`; if (has && !sens) d += `，內容：${v[k]}`; lines.push(d); };
   ALL.forEach(f => add(f.k, f.l, f.sens, f.digits));
-  add("zip_address", "郵遞區號＋戶籍地址", 1); add("mail_zip_address", "郵遞區號＋通訊地址（無則同戶籍）", 1); add("phone_any", "電話（市話，無則手機）", 1);
+  add("zip_address", "郵遞區號＋戶籍地址", 1); add("mail_zip_address", "郵遞區號＋通訊地址（無則同戶籍）", 1); add("phone_any", "電話（市話，無則手機）", 1); add("birth_roc", "出生日期（民國）", 1); add("birth_ad", "出生日期（西元）", 1); add("org_title", "服務單位＋職稱", 0);
   D.custom.forEach((c, i) => { if (c.label) add("custom_" + (i + 1), c.label, 1); });
   [["event_title", "講題／活動名稱"], ["event_org", "邀請單位"], ["purpose", "費用用途"], ["event_time", "活動時間"], ["event_hours", "時數"], ["event_place", "地點"],
    ["amount", "金額阿拉伯數字"], ["amount_fmt", "金額含千分位"], ["amount_cn", "金額國字大寫，如 參仟元整"],
@@ -441,7 +489,9 @@ $("#btnStop").addEventListener("click", () => ctl && ctl.abort());
 // ======================================================================
 // rebuild: apply plan → preview + output bytes
 // ======================================================================
-const renderVal = (op, v) => op.override != null ? op.override : String(op.value ?? "").replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? ""));
+// what the person sees and edits (core) vs. what goes into the document (label text kept around it)
+const coreVal = (op, v) => op.override != null ? op.override : String(op.value ?? "").replace(/\{(\w+)\}/g, (_, k) => (v[k] ?? ""));
+const renderVal = (op, v) => (op.pre || "") + coreVal(op, v) + (op.post || "");
 const refsMissing = (op, v) => op.override == null && [...String(op.value || "").matchAll(/\{(\w+)\}/g)].some(m => !v[m[1]]);
 function saveTemplate() {
   if (!F.plan || !F.hash || !D) return;
@@ -490,7 +540,7 @@ async function rebuildDocx() {
   const ops = F.plan.ops.filter(valid);
   const results = DocxFill.apply(doc, a.map, ops, o => refsMissing(o, v) ? "" : renderVal(o, v));
   const out = document.createElement("div");
-  out.innerHTML = planHeader(results.filter(r => r.ok).length) + `<div class="ops">${results.map((r, i) => rowHtml(r.op, i, refsMissing(r.op, v) ? (r.op.override ?? "") : renderVal(r.op, v), r)).join("")}</div>` + planTags();
+  out.innerHTML = planHeader(results.filter(r => r.ok).length) + `<div class="ops">${results.map((r, i) => rowHtml(r.op, i, refsMissing(r.op, v) ? (r.op.override ?? "") : coreVal(r.op, v), r)).join("")}</div>` + planTags();
   results.forEach((r, i) => bindRow(out.querySelector(`.op[data-i="${i}"]`), r.op, i));
   $("#planOut").replaceChildren(out);
   F.docx.zip.file("word/document.xml", new XMLSerializer().serializeToString(doc));
@@ -527,7 +577,7 @@ async function rebuildPdf(full) {
   const rows = []; let i = 0, okN = 0;
   const all = [...p.fills.map(o => ["fill", o]), ...p.checks.map(o => ["check", o]), ...p.places.map(o => ["place", o])];
   for (const [kind, o] of all) {
-    const shown = kind === "check" ? (o.on ? "勾選" : "不勾") : (refsMissing(o, v) ? (o.override ?? "") : renderVal(o, v));
+    const shown = kind === "check" ? (o.on ? "勾選" : "不勾") : (refsMissing(o, v) ? (o.override ?? "") : coreVal(o, v));
     const ok = kind === "check" || !!shown; if (ok && o.enabled !== false) okN++;
     rows.push(rowHtml(o, i++, shown, ok ? { ok: true } : { ok: false, msg: "沒有對應資料" }, { size: kind === "place", rm: kind === "place" }));
   }
@@ -617,6 +667,22 @@ function drawOverlays() {
   }
 }
 
+$("#btnDlAll").addEventListener("click", async () => {
+  const btn = $("#btnDlAll"); btn.disabled = true; const label = btn.textContent; btn.textContent = "打包中…";
+  try {
+    const zip = new JSZip(); const cur = F; const used = new Set();
+    const uniq = n => { let x = n, i = 2; while (used.has(x)) x = n.replace(/(\.\w+)$/, `_${i++}$1`); used.add(x); return x; };
+    for (const form of FORMS) {
+      F = form; await rebuild(true);
+      if (F.out) zip.file(uniq(F.name.replace(/\.(docx|pdf)$/i, "") + "_已填." + (F.kind === "docx" ? "docx" : "pdf")), F.out);
+    }
+    if (cur && cur.kind) { F = cur; await rebuild(true); renderFormList(); }
+    if (hasImages()) zip.file(uniq(wmFileName()), await Watermark.buildA4({ id_front: D.images.id_front, id_back: D.images.id_back, passbook: D.images.passbook }, wmOpts()));
+    const org = ev().ev_org.replace(/[\\/:*?"<>|\s]/g, "") || "單據";
+    if (await saveBlob(`${org}_單據與影本.zip`, await zip.generateAsync({ type: "blob" }))) toast("已下載 ZIP。列印後記得親筆簽名。");
+  } catch (e) { console.error(e); toast("打包失敗：" + (e.message || e)); }
+  finally { btn.textContent = label; btn.disabled = false; }
+});
 $("#btnDlForm").addEventListener("click", async () => {
   if (!F.out) return;
   const base = F.name.replace(/\.(docx|pdf)$/i, "");
@@ -627,7 +693,8 @@ $("#btnDlForm").addEventListener("click", async () => {
 // watermark
 // ======================================================================
 let wmLine1Auto = true;
-function wmDefault1() { const e = ev(); return `僅供${e.ev_org || "〇〇單位"}${e.ev_purpose || "講座費"}請領使用`; }
+function wmFileName() { const org = ev().ev_org.replace(/[\\/:*?"<>|\s]/g, "") || "影本"; return `身分證及存摺影本_${org}.pdf`; }
+function wmDefault1() { const e = ev(); return `僅供${e.ev_org || "〇〇單位"}${e.ev_purpose || "演講費"}請領使用`; }
 function wmDate() { const d = DocxFill.roc(ev().fill_date); return d ? `中華民國 ${d.full}` : ""; }
 function syncWmAuto() { if (wmLine1Auto) $("#wm1").value = wmDefault1(); if (!$("#wm3").dataset.touched) $("#wm3").value = wmDate(); renderWmPreviewSoon(); }
 function wmOpts() { return { line1: $("#wm1").value, line2: $("#wm2").value, date: $("#wm3").value, color: $("#wmColor").value, opacity: +$("#wmOpacity").value / 100, size: +$("#wmSize").value, enlarge: $("#wmEnlarge").checked }; }
@@ -655,8 +722,7 @@ async function renderWmPreview() {
 $("#btnDlWm").addEventListener("click", async () => {
   try {
     const bytes = await Watermark.buildA4({ id_front: D.images.id_front, id_back: D.images.id_back, passbook: D.images.passbook }, wmOpts());
-    const org = ev().ev_org.replace(/[\\/:*?"<>|\s]/g, "") || "影本";
-    if (await saveBlob(`身分證及存摺影本_${org}.pdf`, new Blob([bytes], { type: "application/pdf" }))) toast("已下載浮水印影本");
+    if (await saveBlob(wmFileName(), new Blob([bytes], { type: "application/pdf" }))) toast("已下載浮水印影本");
   } catch (e) { console.error(e); toast("產生失敗：" + (e.message || e)); }
 });
 
@@ -671,6 +737,7 @@ function switchTab(which) {
 }
 $("#tabFill").addEventListener("click", () => switchTab("fill"));
 $("#tabProfile").addEventListener("click", () => switchTab("profile"));
-initLock(); initRuntime(); renderDerived();
-window.__RAF = { F, get D() { return D; }, values, rulePlan };
+if (window.RAF_OFFLINE || window.claude) { const l = $("#lnkOffline"); if (l) l.hidden = true; }
+initLock(); initRuntime(); renderDerived(); loadTemplates();
+window.__RAF = { get F() { return F; }, get FORMS() { return FORMS; }, get D() { return D; }, values, rulePlan };
 })();

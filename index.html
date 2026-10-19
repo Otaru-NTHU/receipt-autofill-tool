@@ -89,24 +89,25 @@
       <div class="step">
         <div class="step-h"><span class="step-n">1</span><h2>放入空白單據</h2></div>
         <div class="drop" id="drop" tabindex="0" role="button" aria-label="選擇或拖曳單據檔案">
-          <strong>拖曳單據到這裡，或點一下選擇檔案</strong>
+          <strong>拖曳單據到這裡，或點一下選擇檔案（可一次放多份）</strong>
           <span class="note">支援 Word .docx 與 PDF（可填寫或一般 PDF）。舊版 .doc 請先另存成 .docx。</span>
         </div>
-        <input type="file" id="formFile" accept=".docx,.pdf,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        <input type="file" id="formFile" multiple accept=".docx,.pdf,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        <div class="row" id="tplRow" hidden><span class="note">清大常用表單：</span><span class="row" id="tplList"></span></div>
         <div class="row" id="formInfo" hidden></div>
       </div>
 
       <div class="step">
         <div class="step-h"><span class="step-n">2</span><h2>這次的活動</h2></div>
         <div class="grid2">
-          <div class="f"><label for="ev_org">邀請單位</label><input id="ev_org" placeholder="例：元智大學資訊傳播學系"></div>
-          <div class="f"><label for="ev_purpose">用途</label><input id="ev_purpose" value="講座費"></div>
+          <div class="f"><label for="ev_org">邀請單位</label><input id="ev_org" placeholder="例：國立清華大學科技藝術研究所"></div>
+          <div class="f"><label for="ev_purpose">用途</label><input id="ev_purpose" value="演講費"></div>
           <div class="f"><label for="ev_title">講題／活動</label><input id="ev_title" placeholder="例：沉浸式敘事與 XR 創作"></div>
           <div class="f"><label for="ev_date">活動日期</label><input id="ev_date" type="date"></div>
           <div class="f"><label for="ev_time">時間</label><input id="ev_time" placeholder="例：14:00–16:00"></div>
           <div class="f"><label for="ev_hours">時數</label><input id="ev_hours" inputmode="decimal" placeholder="例：2"></div>
           <div class="f"><label for="ev_amount">金額（元）</label><input id="ev_amount" inputmode="numeric" placeholder="例：4000"></div>
-          <div class="f"><label for="ev_place">地點</label><input id="ev_place" placeholder="例：元智大學 R1201"></div>
+          <div class="f"><label for="ev_place">地點</label><input id="ev_place" placeholder="例：國立清華大學 藝術學院"></div>
           <div class="f"><label for="fill_date">填表日期</label><input id="fill_date" type="date"></div>
         </div>
         <div class="f wide" id="noteRow" hidden><label for="ev_note">給 AI 的補充</label><textarea id="ev_note" placeholder="例：日期請留白；通訊地址同戶籍；金額用國字大寫"></textarea></div>
@@ -153,10 +154,11 @@
       <div class="step done">
         <div class="step-h"><span class="step-n">5</span><h2>下載</h2></div>
         <div class="row">
-          <button type="button" class="primary" id="btnDlForm" disabled>下載填好的單據</button>
-          <button type="button" class="primary" id="btnDlWm" disabled>下載浮水印影本 PDF</button>
+          <button type="button" class="primary" id="btnDlAll" disabled>全部打包下載（ZIP）</button>
+          <button type="button" id="btnDlForm" disabled>只下載目前這份單據</button>
+          <button type="button" id="btnDlWm" disabled>只下載浮水印影本 PDF</button>
         </div>
-        <p class="note">列印後記得在簽名處親筆簽名。這份單據的欄位對應與你的調整會記在資料檔裡，下次放入同一份空白單據會直接套用。</p>
+        <p class="note">ZIP 內含所有已放入的單據（已填寫）與浮水印影本。列印後記得在簽名處親筆簽名。這份單據的欄位對應與你的調整會記在資料檔裡，下次放入同一份空白單據會直接套用。</p>
       </div>
     </div>
 
@@ -192,6 +194,12 @@
     </div>
   </section>
 </div>
+
+<footer class="foot">
+  <span>全部在瀏覽器裡處理，不上傳任何資料。</span>
+  <a id="lnkOffline" href="receipt-autofill-offline.html" download>下載離線版（單一檔案）</a>
+  <a href="https://github.com/Otaru-NTHU/receipt-autofill-tool" target="_blank" rel="noopener">使用說明與原始碼</a>
+</footer>
 
 <!-- image editor -->
 <div class="modal" id="editor" hidden role="dialog" aria-modal="true" aria-labelledby="edTitle">
